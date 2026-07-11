@@ -1,0 +1,72 @@
+%%{init: {'theme': 'base', 'themeVariables': {'fontSize': '15px'}}}%%
+flowchart TD
+
+    TLE["Starlink Shell-1 TLE thật (CelesTrak)<br/>1019 / 781 vệ tinh tùy epoch"]
+    PASS5["extract_passes — Task 5 (08_pass_analysis.py)<br/>elev ≥ 30°, cửa sổ 7 ngày từ T_START<br/>→ pass_table_8cities_7days_elev30.csv<br/>(sat_id, station, t_rise, t_set, max_elev)"]
+
+    TLE --> PASS5
+
+    LOOP{{"Với mỗi cặp thành phố có hướng<br/>i → j (56 cặp = 8 × 7)"}}
+    PASS5 --> LOOP
+
+    CLASSIFY["classify_pair(dist_km, h_km, min_elev)<br/>modules/link_geometry.py — TĨNH, đối xứng"]
+    LOOP --> CLASSIFY
+
+    FORMULA["ground_coverage_radius_km(h, elev) = R_E·ψ<br/>ψ = arccos(R_E/(R_E+h)·cos(elev)) − elev<br/>max_sep = 2 × ground_coverage_radius_km(h, elev)"]
+    CLASSIFY -.công thức.-> FORMULA
+
+    DECISION{"dist_km(i, j) ≤ max_sep ?"}
+    CLASSIFY --> DECISION
+
+    DUAL["DUAL<br/>1 vệ tinh nhìn thấy CẢ HAI trạm<br/>cùng lúc — không cần relay"]
+    SF["SF (Store-and-Forward)<br/>phải chuyển tiếp qua vệ tinh trung gian"]
+
+    DECISION -->|"có (2 vòng phủ chồng nhau)"| DUAL
+    DECISION -->|"không"| SF
+
+    DUALPCT["dual_pct = % thời gian trong 24h có<br/>≥1 vệ tinh nhìn thấy đồng thời cả 2 trạm<br/>(mô phỏng time-resolved thật,<br/>09_citypair_feasibility.py)"]
+    DUAL --> DUALPCT
+
+    subgraph RELAY["relay_opportunities(city_i, city_j) — 11f_sf_relay_detail.py"]
+        direction TB
+        R1["Gom pass theo (station, sat_id)<br/>→ mảng t_rise ĐÃ SẮP XẾP tăng dần<br/>times_by[station][sat_id]"]
+        R2["Giao tập vệ tinh:<br/>chỉ giữ sat_id mà CẢ i và j<br/>đều từng nhìn thấy trong 7 ngày"]
+        R3["Với MỖI lần pickup t_pick<br/>(mỗi t_rise của vệ tinh đó qua city_i)"]
+        R4["np.searchsorted(t_j, t_pick, side='right')<br/>→ tìm t_drop = lần ghé qua city_j<br/>SỚM NHẤT SAU t_pick (cùng vệ tinh)"]
+        R5["latency = (t_drop − t_pick) / 60s (phút)<br/>lưu: (latency, sat_id, t_pick, t_drop)"]
+        R1 --> R2 --> R3 --> R4 --> R5
+    end
+
+    SF --> RELAY
+
+    WHY["Vì sao BẤT ĐỐI XỨNG (i→j ≠ j→i)?<br/>Vệ tinh bay 1 HƯỚNG cố định mỗi lượt<br/>(ascending nam→bắc / descending bắc→nam).<br/>i 'trước' j theo hướng bay → i→j nhanh (vài phút).<br/>j→i phải chờ gần hết 1 vòng quỹ đạo (~90-100')<br/>rồi bay đúng hướng ghé j trước, i sau.<br/>Ví dụ đo được: jakarta→manila 7.0' vs<br/>manila→jakarta 711.4' (~102×, ổn định qua 3 epoch TLE)"]
+    RELAY -.giải thích.-> WHY
+
+    AGG["Tổng hợp thống kê cho cặp (i, j):<br/>• n_relay_opportunities<br/>• latency min / median / max (phút)<br/>• top5_relay_sats (tần suất vệ tinh làm relay)<br/>• fastest_sat + giờ pickup/dropoff địa phương"]
+    RELAY --> AGG
+
+    ROWS["56 dòng có hướng<br/>sf_relay_detail_56pairs.csv"]
+    AGG --> ROWS
+    DUALPCT --> ROWS
+
+    CHECK{{"Cross-check: so trung vị tự tính<br/>với modules/citypair_feasibility.sf_latency_minutes<br/>(hàm đã có unit test) trên 3 cặp mẫu<br/>— yêu cầu lệch < 0.05 phút"}}
+    ROWS --> CHECK
+
+    MATRIX["Ma trận 8×8 median_matrix<br/>(NaN ở ô DUAL và ô i=j)"]
+    CHECK -->|khớp| MATRIX
+
+    PLOT["imshow, colormap YlOrRd (1-hue, magnitude)<br/>Ô DUAL: phủ xanh lá + chữ 'DUAL'<br/>Ô SF: số phút trung vị, chữ trắng nếu ô đậm<br/>Trục X = drop-off j, Trục Y = pickup i"]
+    MATRIX --> PLOT
+
+    FIG10["fig10_sf_relay_latency_heatmap.png"]
+    PLOT --> FIG10
+
+    classDef dual fill:#c8e6c9,stroke:#1b5e20,color:#1b5e20;
+    classDef sf fill:#ffe0b2,stroke:#e65100,color:#e65100;
+    classDef output fill:#bbdefb,stroke:#0d47a1,color:#0d47a1,font-weight:bold;
+    classDef note fill:#f5f5f5,stroke:#9e9e9e,color:#616161,font-style:italic;
+
+    class DUAL,DUALPCT dual;
+    class SF sf;
+    class FIG10 output;
+    class FORMULA,WHY note;

@@ -279,7 +279,7 @@ def compute_skr_timeseries(
     duration_hours: float = 24.0,
     step_minutes: float = 1.0,
     alt_m: float = 0.0,
-    min_elevation: float = 10.0,
+    min_elevation: float = 30.0,
     PT: float = PT_DEFAULT,
     mK: float = MK_DEFAULT,
     mD: float = MD_DEFAULT,
@@ -334,10 +334,6 @@ def compute_skr_timeseries(
     skr_baseline = np.zeros(n_steps)
     n_visible    = np.zeros(n_steps, dtype=int)
 
-    # Baseline state: track which satellite is currently being used
-    current_baseline_sat = None  # name of satellite being tracked
-    prev_visible_names = set()   # visible satellites at previous step
-
     for i in range(n_steps):
         t_i = t_array[i]
 
@@ -348,8 +344,6 @@ def compute_skr_timeseries(
 
         if not visible:
             # No satellite visible → gap for both strategies
-            current_baseline_sat = None  # force re-acquisition
-            prev_visible_names = set()
             continue
 
         candidates = compute_skr_all_visible(
@@ -357,33 +351,21 @@ def compute_skr_timeseries(
             PT, mK, mD, Iso_dB, zeta_scale, Rb,
         )
 
-        # --- GREEDY: chọn vệ tinh tốt nhất tại mỗi step ---
+        # --- GREEDY: chọn vệ tinh có SKR_effective cao nhất (weather-aware),
+        # re-evaluate mỗi step ---
         best = greedy_best_satellite(candidates)
         skr_greedy[i] = best["SKR_effective"] if best else 0.0
 
-        # --- BASELINE (Fixed Satellite): track 1 vệ tinh cho đến khi lặn ---
-        # Logic: khi cần handover, chọn vệ tinh TỐT NHẤT hiện tại rồi
-        # STICK với nó cho đến khi nó lặn dưới min_elevation.
-        # Khác greedy: greedy re-evaluate mỗi step, baseline commit 1 vệ tinh.
-        # → Baseline có SKR hình chuông (tăng → peak → giảm theo pass)
-        # → Greedy luôn ở mức cao (nhảy sang vệ tinh tốt hơn liên tục)
-        visible_names = {c["name"] for c in candidates}
-
-        if current_baseline_sat is not None and current_baseline_sat in visible_names:
-            # Vệ tinh hiện tại vẫn visible → tiếp tục track
-            for c in candidates:
-                if c["name"] == current_baseline_sat:
-                    skr_baseline[i] = c["SKR_effective"]
-                    break
-        else:
-            # Vệ tinh hiện tại đã lặn (hoặc chưa có) → handover
-            # Chọn vệ tinh TỐT NHẤT hiện tại (highest SKR = lowest zenith)
-            # candidates đã sorted by SKR_effective descending
-            baseline_choice = candidates[0]
-            current_baseline_sat = baseline_choice["name"]
-            skr_baseline[i] = baseline_choice["SKR_effective"]
-
-        prev_visible_names = visible_names
+        # --- BASELINE (elevation-priority): chọn vệ tinh có zenith angle
+        # thấp nhất (elevation cao nhất) tại MỖI step, KHÔNG xét thời tiết.
+        # Re-evaluate mỗi step giống greedy — sự khác biệt DUY NHẤT giữa
+        # 2 chiến lược là TIÊU CHÍ chọn (SKR_effective vs zenith), không
+        # phải tần suất handover. Khớp đúng công thức trong paper:
+        # s_base(t) = argmin_s zeta_s(t). (Trước đây baseline "dính" 1 vệ
+        # tinh đến khi lặn — với constellation mật độ cao, cách đó làm
+        # baseline tụt giả tạo và phóng đại % cải thiện của greedy.)
+        baseline_choice = min(candidates, key=lambda c: c["zenith_deg"])
+        skr_baseline[i] = baseline_choice["SKR_effective"]
 
     time_hours = np.arange(n_steps) * step_minutes / 60.0
 

@@ -7,8 +7,14 @@ cho 8 thành phố ASEAN, dùng để tính ảnh hưởng thời tiết lên k�
 
 Chiến lược thiết kế
 -------------------
-Không dùng real-time API. Dùng climatological monthly averages — đây là
-chuẩn trong FSO research (Paper 5, Koné 2024 dùng cùng phương pháp).
+Climatological monthly averages, KHÔNG phải real-time API. Từ 03/07/2026
+(Task 1, plan 07-5), R_mm_month và P_cloud được tính từ dữ liệu HOURLY
+thật (ERA5/ERA5-Land, Open-Meteo) qua scripts/01_fetch_weather_era5.py,
+giai đoạn 2015-01-01 đến 2024-12-31 (10 năm, nâng từ 6 năm/daily-only
+trước đó), rồi nén thành climatology tháng. Raw hourly lưu ở
+data/raw/era5_hourly_{city}.csv.gz — dùng cho modules/weather_stats.py
+(climatology giờ×tháng, tương quan liên thành phố, Task 2-3) mà không cần
+fetch lại.
 
 Ba tham số thời tiết chính:
     R_mm_h   — rainfall rate (mm/h), tính từ mm/month
@@ -23,15 +29,35 @@ Pipeline tích hợp với channel_model.py
         → sikd_performance.compute_sikd_performance(hg, hl, sigma_X2)
         → SKR_effective = SKR_clear × (1 - P_cloud)
 
-Nguồn dữ liệu
--------------
-    - Rainfall: Formula_Compendium_Part3_Weather.md (từ Paper 5, Koné 2024)
-      + ước lượng khí hậu học nhiệt đới cho ASEAN
-    - Visibility: ước lượng từ khí hậu học (mùa khô ~12–15 km,
-      mùa mưa ~5–8 km cho khí hậu nhiệt đới ẩm)
-    - Cloud outage: ước lượng từ thống kê mây nhiệt đới
-      (mùa mưa ~50–65%, mùa khô ~15–25%)
-    - rain_fraction: ~0.15 (mưa ~3.6h/ngày trong mùa mưa nhiệt đới)
+Nguồn dữ liệu (cập nhật 03/07/2026 — 10 năm hourly, Task 1)
+------------------------------------------------------------
+    - R_mm_month : trung bình tổng mưa/tháng, 2015-2024 (10 năm), từ
+      Open-Meteo archive API (ERA5/ERA5-Land), hourly precipitation nén
+      thành ngày rồi thành tháng. Toạ độ = đúng GROUND_STATIONS
+      (orbital_mechanics.py), đã verify qua web search (latlong.net,
+      geodatos.net, OpenStreetMap) — KHÔNG dùng toạ độ riêng của Nguyen,
+      Le, Pham, Dang (2023) vì điểm HCMC của bài đó (10.4632N, 106.4207E)
+      lệch ~35-40km so với trung tâm TP.HCM thật.
+    - P_cloud : tỷ lệ ngày/tháng có cloud_cover_mean ≥ 85%, tính từ hourly
+      cloud_cover trung bình theo ngày (xem scripts/01_fetch_weather_era5.py,
+      CLOUD_OUTAGE_THRESHOLD). So với bản 6 năm/daily-only cũ, chênh lệch
+      P_cloud từng tháng lên tới 0.12 (xem data/PROVENANCE.md, Task 4) —
+      biến động liên năm thực sự, không phải lỗi.
+      Đối chiếu định tính với Nguyen, Le, Pham, Dang (2023) — bài dùng
+      ECMWF ERA-Interim CLWC 2015-2020 cho Hà Nội/Đà Nẵng/TP.HCM, fit
+      Gamma distribution, báo cáo system availability 80-87% theo mùa
+      (EAI EETINIS, doi:10.4108/eetinis.v10i3.3327) — cùng xu hướng mùa,
+      không phải số khớp tuyệt đối (phương pháp/ngưỡng khác nhau).
+    - Visibility V_km : KHÔNG có trong Open-Meteo archive (không có biến
+      visibility lịch sử) — vẫn là ước lượng suy ra từ P_cloud
+      (V = 15 - 10×P_cloud), cùng logic như bản cũ và như Eq.(3) của
+      Nguyen et al. (2023), nơi visibility cũng được suy ra từ CLWC chứ
+      không đo trực tiếp.
+    - Provenance đầy đủ (ngày tải, toạ độ, ngưỡng, raw daily data):
+      05_Code/data/real_climate_data.json + open_meteo_raw_daily.json
+    - rain_fraction (RAIN_FRACTION_DEFAULT, tỷ lệ giờ mưa trong ngày mưa):
+      vẫn giữ ước lượng 0.15 — Open-Meteo archive chỉ có dữ liệu ngày,
+      không đủ để suy ra phân bố trong ngày.
 
 Thành phố hỗ trợ
 ----------------
@@ -40,9 +66,11 @@ Thành phố hỗ trợ
 
 References
 ----------
-    [P5] Koné et al., IJP 2024 — tropical FSO, Abidjan (khí hậu tương tự VN)
+    [P5] Koné et al., IJP 2024 — tropical FSO, Abidjan (rain attenuation model)
     [P3] Toka et al., Computer Networks 2025 — weather-adaptive routing
     [P4] Potter et al., JPL/NASA 1969 — cloud = complete blockage at optical
+    [P6] Nguyen, Le, Pham, Dang, EAI EETINIS 2023, doi:10.4108/eetinis.v10i3.3327
+         — ECMWF ERA-Interim CLWC, Gamma model, Hanoi/Da Nang/HCMC 2015-2020
 """
 
 import numpy as np
@@ -84,157 +112,150 @@ MONTHS = [
 #   ASEAN data  : tropical climatology estimates analogous to Paper 5 (Abidjan)
 # ---------------------------------------------------------------------------
 
+# R_mm_month, P_cloud: real Open-Meteo (ERA5/ERA5-Land) climatology,
+# 2015-2020 daily data aggregated per calendar month — see
+# 09_Fetch_Real_Weather_Data.py and data/real_climate_data.json for the
+# fetch script, exact API parameters, and raw daily cache.
+# V_km: still a derived estimate (V = 15 - 10*P_cloud); Open-Meteo's
+# historical archive has no visibility variable, and neither does the
+# reference lab study (Nguyen et al. 2023 also derive V from CLWC, not
+# measure it directly).
 ASEAN_CLIMATE_DATA: dict[str, list[tuple[float, float, float]]] = {
 
-    # ── Hà Nội (21.03°N, 105.85°E) ──────────────────────────────────────
-    # Mùa mưa: tháng 5–10 (mưa nhiều, tầm nhìn kém)
-    # Mùa khô: tháng 11–4 (ít mưa, sương mù nhẹ tháng 1–3)
+    # ── Hà Nội (21.0285°N, 105.8542°E) ──────────────────────────────────────
     "hanoi": [
         #  R_mm_month  V_km  P_cloud
-        (   5,         12,   0.20),  # Jan — khô, sương mù nhẹ
-        (  10,         12,   0.22),  # Feb
-        (  20,         11,   0.28),  # Mar — bắt đầu ẩm
-        (  50,         10,   0.32),  # Apr
-        ( 150,          8,   0.50),  # May — bắt đầu mùa mưa
-        ( 200,          7,   0.58),  # Jun — đỉnh mưa
-        ( 180,          7,   0.55),  # Jul
-        ( 160,          8,   0.52),  # Aug
-        ( 200,          7,   0.58),  # Sep
-        ( 150,          8,   0.50),  # Oct
-        (  80,         10,   0.38),  # Nov — cuối mùa mưa
-        (  20,         13,   0.22),  # Dec — khô
+        (     65.6,    10.4, 0.461),  # Jan
+        (     48.2,    10.3, 0.473),  # Feb
+        (     74.3,     9.7, 0.532),  # Mar
+        (     94.1,    11.5, 0.350),  # Apr
+        (    220.5,    10.8, 0.416),  # May
+        (    258.8,     8.0, 0.697),  # Jun
+        (    316.4,     8.3, 0.665),  # Jul
+        (    418.9,     8.7, 0.626),  # Aug
+        (    357.5,    10.3, 0.473),  # Sep
+        (    179.8,    12.1, 0.287),  # Oct
+        (     60.8,    12.6, 0.243),  # Nov
+        (     36.0,    11.1, 0.390),  # Dec
     ],
 
-    # ── TP. Hồ Chí Minh (10.82°N, 106.63°E) ─────────────────────────────
-    # Mùa mưa: tháng 5–11 (mưa nhiều, đặc trưng nhiệt đới)
-    # Mùa khô: tháng 12–4 (ít mưa, tầm nhìn tốt)
+    # ── TP. Hồ Chí Minh (10.8231°N, 106.6297°E) ─────────────────────────────
     "hcmc": [
         #  R_mm_month  V_km  P_cloud
-        (   5,         15,   0.15),  # Jan — khô nhất
-        (   5,         15,   0.15),  # Feb
-        (  10,         14,   0.18),  # Mar
-        (  40,         12,   0.28),  # Apr — bắt đầu mưa
-        ( 180,          7,   0.55),  # May
-        ( 250,          6,   0.62),  # Jun — đỉnh mưa
-        ( 280,          6,   0.65),  # Jul — đỉnh mưa
-        ( 260,          6,   0.63),  # Aug
-        ( 280,          6,   0.65),  # Sep
-        ( 240,          7,   0.60),  # Oct
-        ( 120,          9,   0.45),  # Nov
-        (  30,         13,   0.20),  # Dec
+        (     29.4,    12.7, 0.232),  # Jan
+        (     13.9,    14.0, 0.102),  # Feb
+        (     17.2,    14.3, 0.074),  # Mar
+        (     83.9,    13.4, 0.157),  # Apr
+        (    228.3,     9.7, 0.526),  # May
+        (    250.8,     8.5, 0.647),  # Jun
+        (    297.6,     8.2, 0.684),  # Jul
+        (    299.4,     9.1, 0.594),  # Aug
+        (    349.0,     7.8, 0.717),  # Sep
+        (    314.2,     8.2, 0.681),  # Oct
+        (    144.6,    10.7, 0.433),  # Nov
+        (     64.7,    11.2, 0.381),  # Dec
     ],
 
-    # ── Đà Nẵng (16.05°N, 108.20°E) ─────────────────────────────────────
-    # Mùa mưa: tháng 9–12 (mưa lớn, bão)
-    # Mùa khô: tháng 1–8 (khô, nóng)
+    # ── Đà Nẵng (16.0544°N, 108.2022°E) ─────────────────────────────────────
     "danang": [
         #  R_mm_month  V_km  P_cloud
-        (  50,         12,   0.30),  # Jan — cuối mùa mưa
-        (  20,         13,   0.22),  # Feb
-        (  15,         14,   0.18),  # Mar
-        (  20,         14,   0.18),  # Apr
-        (  40,         13,   0.25),  # May
-        (  50,         12,   0.28),  # Jun
-        (  50,         12,   0.28),  # Jul
-        (  60,         11,   0.32),  # Aug
-        ( 200,          7,   0.55),  # Sep — bắt đầu mùa mưa
-        ( 350,          5,   0.68),  # Oct — đỉnh mưa
-        ( 300,          6,   0.65),  # Nov
-        ( 150,          8,   0.52),  # Dec
+        (    170.0,    10.9, 0.410),  # Jan
+        (     78.3,    12.6, 0.244),  # Feb
+        (     51.7,    13.7, 0.132),  # Mar
+        (     74.8,    13.5, 0.147),  # Apr
+        (     73.0,    11.6, 0.339),  # May
+        (     65.7,    10.3, 0.467),  # Jun
+        (    117.5,    10.4, 0.455),  # Jul
+        (    116.4,     9.7, 0.532),  # Aug
+        (    241.8,    10.6, 0.443),  # Sep
+        (    467.2,     9.8, 0.516),  # Oct
+        (    346.5,    10.9, 0.407),  # Nov
+        (    345.6,     9.3, 0.574),  # Dec
     ],
 
-    # ── Bangkok (13.75°N, 100.52°E) ──────────────────────────────────────
-    # Mùa mưa: tháng 5–10
-    # Mùa khô: tháng 11–4
+    # ── Bangkok (13.7563°N, 100.5018°E) ─────────────────────────────────────
     "bangkok": [
         #  R_mm_month  V_km  P_cloud
-        (  10,         15,   0.15),  # Jan
-        (  15,         15,   0.15),  # Feb
-        (  30,         13,   0.20),  # Mar
-        (  60,         11,   0.30),  # Apr
-        ( 180,          8,   0.52),  # May
-        ( 150,          8,   0.50),  # Jun
-        ( 140,          8,   0.48),  # Jul
-        ( 160,          7,   0.52),  # Aug
-        ( 200,          7,   0.58),  # Sep
-        ( 180,          7,   0.55),  # Oct
-        (  50,         11,   0.30),  # Nov
-        (  10,         14,   0.18),  # Dec
+        (     24.0,    13.9, 0.106),  # Jan
+        (     29.9,    14.7, 0.035),  # Feb
+        (     44.4,    14.2, 0.081),  # Mar
+        (     83.8,    12.9, 0.210),  # Apr
+        (    158.1,     9.3, 0.568),  # May
+        (    144.6,     7.8, 0.723),  # Jun
+        (    195.3,     6.9, 0.813),  # Jul
+        (    187.0,     6.9, 0.810),  # Aug
+        (    293.3,     7.6, 0.740),  # Sep
+        (    241.0,     9.5, 0.552),  # Oct
+        (     71.7,    12.3, 0.270),  # Nov
+        (     19.4,    13.7, 0.132),  # Dec
     ],
 
-    # ── Singapore (1.35°N, 103.82°E) ─────────────────────────────────────
-    # Mưa quanh năm, không có mùa khô rõ rệt
-    # Đỉnh mưa: tháng 11–1 (Northeast Monsoon)
+    # ── Singapore (1.3521°N, 103.8198°E) ────────────────────────────────────
     "singapore": [
         #  R_mm_month  V_km  P_cloud
-        ( 230,          8,   0.55),  # Jan — Northeast Monsoon
-        ( 150,          9,   0.48),  # Feb
-        ( 170,          9,   0.48),  # Mar
-        ( 160,          9,   0.48),  # Apr
-        ( 170,          9,   0.48),  # May
-        ( 130,         10,   0.42),  # Jun
-        ( 150,         10,   0.42),  # Jul
-        ( 150,         10,   0.42),  # Aug
-        ( 160,          9,   0.45),  # Sep
-        ( 170,          9,   0.48),  # Oct
-        ( 250,          8,   0.58),  # Nov
-        ( 280,          7,   0.62),  # Dec
+        (    271.3,     8.6, 0.642),  # Jan
+        (    123.3,    10.2, 0.481),  # Feb
+        (    208.4,    11.5, 0.348),  # Mar
+        (    291.2,     9.4, 0.560),  # Apr
+        (    312.6,     9.2, 0.581),  # May
+        (    293.5,    10.1, 0.493),  # Jun
+        (    199.4,    10.7, 0.429),  # Jul
+        (    230.1,    10.6, 0.445),  # Aug
+        (    210.8,    10.0, 0.500),  # Sep
+        (    301.8,     8.2, 0.681),  # Oct
+        (    382.2,     6.9, 0.810),  # Nov
+        (    315.3,     7.4, 0.761),  # Dec
     ],
 
-    # ── Manila (14.60°N, 120.98°E) ───────────────────────────────────────
-    # Mùa mưa: tháng 6–11 (bão nhiều)
-    # Mùa khô: tháng 12–5
+    # ── Manila (14.5995°N, 120.9842°E) ──────────────────────────────────────
     "manila": [
         #  R_mm_month  V_km  P_cloud
-        (  10,         15,   0.15),  # Jan
-        (  10,         15,   0.15),  # Feb
-        (  15,         14,   0.18),  # Mar
-        (  20,         14,   0.18),  # Apr
-        (  90,         10,   0.38),  # May
-        ( 250,          6,   0.62),  # Jun
-        ( 350,          5,   0.68),  # Jul — đỉnh mưa + bão
-        ( 350,          5,   0.68),  # Aug
-        ( 300,          5,   0.65),  # Sep
-        ( 200,          7,   0.55),  # Oct
-        ( 100,          9,   0.40),  # Nov
-        (  30,         13,   0.22),  # Dec
+        (     73.8,    13.2, 0.184),  # Jan
+        (     31.8,    13.8, 0.117),  # Feb
+        (     24.3,    14.1, 0.094),  # Mar
+        (     39.9,    13.8, 0.117),  # Apr
+        (    136.7,    11.9, 0.306),  # May
+        (    253.6,    10.1, 0.493),  # Jun
+        (    402.7,     7.7, 0.735),  # Jul
+        (    343.2,     7.8, 0.716),  # Aug
+        (    342.9,     7.9, 0.707),  # Sep
+        (    244.9,     9.5, 0.548),  # Oct
+        (    111.7,    11.6, 0.343),  # Nov
+        (    171.4,    11.1, 0.387),  # Dec
     ],
 
-    # ── Jakarta (6.21°S, 106.85°E) ───────────────────────────────────────
-    # Mùa mưa: tháng 11–4 (ngược với VN)
-    # Mùa khô: tháng 5–10
+    # ── Jakarta (6.2088°S, 106.8456°E) ──────────────────────────────────────
     "jakarta": [
         #  R_mm_month  V_km  P_cloud
-        ( 300,          6,   0.65),  # Jan — đỉnh mưa
-        ( 280,          6,   0.62),  # Feb
-        ( 220,          7,   0.58),  # Mar
-        ( 150,          8,   0.50),  # Apr
-        ( 100,         10,   0.38),  # May
-        (  60,         12,   0.28),  # Jun
-        (  40,         13,   0.22),  # Jul — khô nhất
-        (  40,         13,   0.22),  # Aug
-        (  60,         12,   0.28),  # Sep
-        ( 100,         10,   0.38),  # Oct
-        ( 150,          8,   0.50),  # Nov
-        ( 250,          7,   0.60),  # Dec
+        (    291.2,     6.6, 0.842),  # Jan
+        (    321.7,     6.9, 0.813),  # Feb
+        (    275.4,     8.0, 0.697),  # Mar
+        (    233.4,     9.2, 0.583),  # Apr
+        (    156.2,    11.4, 0.358),  # May
+        (    119.4,    12.6, 0.240),  # Jun
+        (     66.3,    13.2, 0.184),  # Jul
+        (     58.7,    13.2, 0.177),  # Aug
+        (     93.8,    12.8, 0.223),  # Sep
+        (    161.2,    10.8, 0.419),  # Oct
+        (    234.0,     8.4, 0.657),  # Nov
+        (    259.7,     6.9, 0.806),  # Dec
     ],
 
-    # ── Kuala Lumpur (3.14°N, 101.69°E) ─────────────────────────────────
-    # Mưa quanh năm, hai đỉnh: tháng 4–5 và tháng 10–11
+    # ── Kuala Lumpur (3.1390°N, 101.6869°E) ─────────────────────────────────
     "kuala_lumpur": [
         #  R_mm_month  V_km  P_cloud
-        ( 160,          9,   0.48),  # Jan
-        ( 150,          9,   0.45),  # Feb
-        ( 200,          8,   0.52),  # Mar
-        ( 250,          7,   0.60),  # Apr — đỉnh 1
-        ( 200,          8,   0.52),  # May
-        ( 120,         10,   0.40),  # Jun
-        ( 100,         11,   0.35),  # Jul
-        ( 130,         10,   0.40),  # Aug
-        ( 160,          9,   0.48),  # Sep
-        ( 250,          7,   0.60),  # Oct — đỉnh 2
-        ( 280,          7,   0.62),  # Nov
-        ( 200,          8,   0.52),  # Dec
+        (    222.0,     8.7, 0.632),  # Jan
+        (    117.3,    11.0, 0.399),  # Feb
+        (    222.7,    10.7, 0.432),  # Mar
+        (    287.7,     8.4, 0.657),  # Apr
+        (    273.6,     7.7, 0.726),  # May
+        (    186.5,     8.7, 0.630),  # Jun
+        (    181.4,     9.6, 0.542),  # Jul
+        (    227.2,     8.9, 0.610),  # Aug
+        (    253.3,     8.4, 0.663),  # Sep
+        (    273.8,     7.3, 0.765),  # Oct
+        (    380.5,     6.1, 0.893),  # Nov
+        (    312.9,     7.3, 0.765),  # Dec
     ],
 }
 
@@ -370,7 +391,12 @@ def get_season(city: str, month: int) -> str:
     """
     Phân loại mùa (wet/dry) cho một thành phố và tháng.
 
-    Dựa trên ngưỡng lượng mưa: R_mm_month > 100 mm → wet season.
+    Dùng phân loại TƯƠNG ĐỐI: 6 tháng có R_mm_month cao nhất trong NĂM của
+    chính thành phố đó = wet, 6 tháng thấp nhất = dry. KHÔNG dùng ngưỡng
+    tuyệt đối (R > 100mm) — với thành phố mưa quanh năm như Singapore
+    (R > 100mm cả 12 tháng theo dữ liệu Open-Meteo thật), ngưỡng tuyệt đối
+    khiến nhóm "dry" rỗng, tạo ra kết luận sai "không có mùa khô" trong khi
+    thực ra Singapore vẫn có 6 tháng tương đối khô hơn 6 tháng còn lại.
 
     Parameters
     ----------
@@ -381,17 +407,19 @@ def get_season(city: str, month: int) -> str:
     -------
     'wet' hoặc 'dry'
     """
-    params = get_city_params(city, month)
-    return "wet" if params["R_mm_month"] > 100.0 else "dry"
+    rain_by_month = [ASEAN_CLIMATE_DATA[city][m][0] for m in range(12)]
+    order = sorted(range(12), key=lambda m: rain_by_month[m])  # ascending
+    dry_months_idx = set(order[:6])
+    return "dry" if (month - 1) in dry_months_idx else "wet"
 
 
 def get_wet_months(city: str) -> list[int]:
-    """Trả về danh sách các tháng mùa mưa (R > 100 mm/month) cho một thành phố."""
+    """Trả về 6 tháng mưa nhiều nhất (tương đối) trong năm của một thành phố."""
     return [m for m in range(1, 13) if get_season(city, m) == "wet"]
 
 
 def get_dry_months(city: str) -> list[int]:
-    """Trả về danh sách các tháng mùa khô (R ≤ 100 mm/month) cho một thành phố."""
+    """Trả về 6 tháng mưa ít nhất (tương đối) trong năm của một thành phố."""
     return [m for m in range(1, 13) if get_season(city, m) == "dry"]
 
 
@@ -639,4 +667,56 @@ def compute_annual_stats(
         "skr_dry_mean":       float(np.mean(skr_dry)) if skr_dry else 0.0,
         "wet_months":         wet_months,
         "dry_months":         dry_months,
+    }
+
+
+# ============================================================
+# RELIABILITY METRICS (for GLOBECOM WS-03 paper)
+# ============================================================
+
+def compute_reliability_metrics(city, month, skr_eff_kbps=None, rain_fraction=0.15):
+    """
+    Compute formal reliability metrics for a given city/month.
+
+    Parameters
+    ----------
+    city : str
+        City key (e.g. 'hanoi', 'hcmc')
+    month : int
+        Month number (1-12)
+    skr_eff_kbps : float, optional
+        Effective SKR in kbps (if None, K_day not computed)
+    rain_fraction : float
+        Fraction of non-cloud time that is rainy (default 0.15)
+
+    Returns
+    -------
+    dict with keys:
+        A       — Link availability = 1 - P_cloud
+        P_out   — Outage probability = P_cloud
+        K_day   — Daily key delivery in bits (None if skr_eff_kbps not given)
+        p_clear — Probability of clear state
+        p_rain  — Probability of rain state
+        p_cloud — Probability of cloud/outage state
+    """
+    params = get_city_params(city, month, rain_fraction=rain_fraction)
+    P_cloud = params['P_cloud']
+
+    p_rain = min(rain_fraction, 1.0 - P_cloud)
+    p_clear = max(0.0, 1.0 - P_cloud - p_rain)
+
+    A = p_clear + p_rain  # = 1 - P_cloud
+    P_out = P_cloud
+
+    K_day = None
+    if skr_eff_kbps is not None:
+        K_day = skr_eff_kbps * 1000.0 * 86400.0  # bits/day
+
+    return {
+        "A": A,
+        "P_out": P_out,
+        "K_day": K_day,
+        "p_clear": p_clear,
+        "p_rain": p_rain,
+        "p_cloud": P_cloud,
     }

@@ -1,0 +1,228 @@
+{
+  "rollout_order": [
+    "hanoi",
+    "danang",
+    "bangkok",
+    "hcmc",
+    "manila",
+    "kuala_lumpur",
+    "singapore",
+    "jakarta"
+  ],
+  "rollout_distance_km": {
+    "hanoi": 0,
+    "danang": 605.9161066626544,
+    "bangkok": 987.8610807368998,
+    "hcmc": 1137.804375792417,
+    "manila": 1752.5990609510538,
+    "kuala_lumpur": 2039.7083426673908,
+    "singapore": 2199.0177678618675,
+    "jakarta": 3030.582639630642
+  },
+  "results": {
+    "dry": [
+      {
+        "n_sites": 1,
+        "sites": [
+          "hanoi"
+        ],
+        "improvement_pct": 0.0,
+        "mean_skr": 0.006256833826693707,
+        "top_station": "hanoi"
+      },
+      {
+        "n_sites": 2,
+        "sites": [
+          "hanoi",
+          "danang"
+        ],
+        "improvement_pct": 8.941541616355009,
+        "mean_skr": 0.006816291227173703,
+        "top_station": "danang"
+      },
+      {
+        "n_sites": 3,
+        "sites": [
+          "hanoi",
+          "danang",
+          "bangkok"
+        ],
+        "improvement_pct": 81.88474787634836,
+        "mean_skr": 0.011380226430723929,
+        "top_station": "bangkok"
+      },
+      {
+        "n_sites": 4,
+        "sites": [
+          "hanoi",
+          "danang",
+          "bangkok",
+          "hcmc"
+        ],
+        "improvement_pct": 83.72829515020501,
+        "mean_skr": 0.011495574120165681,
+        "top_station": "bangkok"
+      },
+      {
+        "n_sites": 5,
+        "sites": [
+          "hanoi",
+          "danang",
+          "bangkok",
+          "hcmc",
+          "manila"
+        ],
+        "improvement_pct": 84.46591371832409,
+        "mean_skr": 0.011541725688247729,
+        "top_station": "bangkok"
+      },
+      {
+        "n_sites": 6,
+        "sites": [
+          "hanoi",
+          "danang",
+          "bangkok",
+          "hcmc",
+          "manila",
+          "kuala_lumpur"
+        ],
+        "improvement_pct": 84.46591371832409,
+        "mean_skr": 0.011541725688247729,
+        "top_station": "bangkok"
+      },
+      {
+        "n_sites": 7,
+        "sites": [
+          "hanoi",
+          "danang",
+          "bangkok",
+          "hcmc",
+          "manila",
+          "kuala_lumpur",
+          "singapore"
+        ],
+        "improvement_pct": 84.46591371832409,
+        "mean_skr": 0.011541725688247729,
+        "top_station": "bangkok"
+      },
+      {
+        "n_sites": 8,
+        "sites": [
+          "hanoi",
+          "danang",
+          "bangkok",
+          "hcmc",
+          "manila",
+          "kuala_lumpur",
+          "singapore",
+          "jakarta"
+        ],
+        "improvement_pct": 84.46591371832409,
+        "mean_skr": 0.011541725688247729,
+        "top_station": "bangkok"
+      }
+    ],
+    "wet": [
+      {
+        "n_sites": 1,
+        "sites": [
+          "hanoi"
+        ],
+        "improvement_pct": 0.0,
+        "mean_skr": 0.0014344629608499923,
+        "top_station": "hanoi"
+      },
+      {
+        "n_sites": 2,
+        "sites": [
+          "hanoi",
+          "danang"
+        ],
+        "improvement_pct": 312.0433116375355,
+        "mean_skr": 0.005910608688100153,
+        "top_station": "danang"
+      },
+      {
+        "n_sites": 3,
+        "sites": [
+          "hanoi",
+          "danang",
+          "bangkok"
+        ],
+        "improvement_pct": 312.0433116375355,
+        "mean_skr": 0.005910608688100153,
+        "top_station": "danang"
+      },
+      {
+        "n_sites": 4,
+        "sites": [
+          "hanoi",
+          "danang",
+          "bangkok",
+          "hcmc"
+        ],
+        "improvement_pct": 312.5925464462076,
+        "mean_skr": 0.005918487257998649,
+        "top_station": "danang"
+      },
+      {
+        "n_sites": 5,
+        "sites": [
+          "hanoi",
+          "danang",
+          "bangkok",
+          "hcmc",
+          "manila"
+        ],
+        "improvement_pct": 312.5925464462076,
+        "mean_skr": 0.005918487257998649,
+        "top_station": "danang"
+      },
+      {
+        "n_sites": 6,
+        "sites": [
+          "hanoi",
+          "danang",
+          "bangkok",
+          "hcmc",
+          "manila",
+          "kuala_lumpur"
+        ],
+        "improvement_pct": 331.90581873445933,
+        "mean_skr": 0.006195528995501726,
+        "top_station": "danang"
+      },
+      {
+        "n_sites": 7,
+        "sites": [
+          "hanoi",
+          "danang",
+          "bangkok",
+          "hcmc",
+          "manila",
+          "kuala_lumpur",
+          "singapore"
+        ],
+        "improvement_pct": 406.8349455125598,
+        "mean_skr": 0.0072703595660219104,
+        "top_station": "singapore"
+      },
+      {
+        "n_sites": 8,
+        "sites": [
+          "hanoi",
+          "danang",
+          "bangkok",
+          "hcmc",
+          "manila",
+          "kuala_lumpur",
+          "singapore",
+          "jakarta"
+        ],
+        "improvement_pct": 678.135718762695,
+        "mean_skr": 0.011162068670794724,
+        "top_station": "jakarta"
+      }
+    ]
+  }
+}
